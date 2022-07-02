@@ -1,0 +1,229 @@
+import org.mozilla.fenix.gradle.tasks.GithubDetailsTask
+
+buildscript {
+    repositories {
+        maven {
+            name "Mozilla Nightly"
+            url "https://nightly.maven.mozilla.org/maven2"
+            content {
+                includeGroupByRegex RepoMatching.mozilla
+            }
+        }
+
+        maven {
+            name "Mozilla"
+            url "https://maven.mozilla.org/maven2"
+            content {
+                includeGroupByRegex RepoMatching.mozilla
+            }
+        }
+
+        if (project.hasProperty("googleRepo")) {
+            maven {
+                name "Google"
+                allowInsecureProtocol true
+                url project.property("googleRepo")
+            }
+        } else {
+            google() {
+                content {
+                    includeGroupByRegex RepoMatching.androidx
+                    includeGroupByRegex RepoMatching.comGoogleAndroid
+                    includeGroupByRegex RepoMatching.comGoogleFirebase
+                    includeGroupByRegex RepoMatching.comGoogleTesting
+                    includeGroupByRegex RepoMatching.comAndroid
+                }
+            }
+        }
+
+        if (project.hasProperty("centralRepo")) {
+            maven {
+                name "MavenCentral"
+                url project.property("centralRepo")
+                allowInsecureProtocol true
+            }
+        } else {
+            mavenCentral() {
+                content {
+                    excludeGroupByRegex RepoMatching.mozilla
+                    excludeGroupByRegex RepoMatching.androidx
+                    excludeGroupByRegex RepoMatching.comGoogleAndroid
+                    excludeGroupByRegex RepoMatching.comGoogleFirebase
+                    excludeGroupByRegex RepoMatching.comAndroid
+                }
+            }
+        }
+    }
+
+    dependencies {
+        classpath Deps.tools_androidgradle
+        classpath Deps.tools_kotlingradle
+        classpath Deps.tools_benchmarkgradle
+        classpath Deps.androidx_safeargs
+        classpath Deps.osslicenses_plugin
+
+        classpath "org.mozilla.components:tooling-glean-gradle:${Versions.mozilla_android_components}"
+        classpath "org.mozilla.components:tooling-nimbus-gradle:${Versions.mozilla_android_components}"
+    }
+}
+
+plugins {
+    id("io.gitlab.arturbosch.detekt").version("1.19.0")
+}
+
+allprojects {
+    repositories {
+        maven {
+            name "Mozilla Nightly"
+            url "https://nightly.maven.mozilla.org/maven2"
+            content {
+                includeGroupByRegex RepoMatching.mozilla
+            }
+        }
+
+        maven {
+            name "Mozilla"
+            url "https://maven.mozilla.org/maven2"
+            content {
+                includeGroupByRegex RepoMatching.mozilla
+            }
+        }
+
+        if (project.hasProperty("googleRepo")) {
+            maven {
+                name "Google"
+                url project.property("googleRepo")
+                allowInsecureProtocol true
+            }
+        } else {
+            google() {
+                content {
+                    includeGroupByRegex RepoMatching.androidx
+                    includeGroupByRegex RepoMatching.comGoogleAndroid
+                    includeGroupByRegex RepoMatching.comGoogleFirebase
+                    includeGroupByRegex RepoMatching.comAndroid
+                }
+            }
+        }
+
+        if (project.hasProperty("centralRepo")) {
+            maven {
+                name "MavenCentral"
+                url project.property("centralRepo")
+                allowInsecureProtocol true
+            }
+        } else {
+            mavenCentral() {
+                content {
+                    excludeGroupByRegex RepoMatching.mozilla
+                    excludeGroupByRegex RepoMatching.androidx
+                    excludeGroupByRegex RepoMatching.comGoogleAndroid
+                    excludeGroupByRegex RepoMatching.comGoogleFirebase
+                    excludeGroupByRegex RepoMatching.comAndroid
+                }
+            }
+        }
+    }
+
+    tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
+        kotlinOptions.jvmTarget = "1.8"
+        kotlinOptions.allWarningsAsErrors = true
+        kotlinOptions.freeCompilerArgs += [
+            "-Xopt-in=kotlin.RequiresOptIn"
+        ]
+    }
+}
+
+tasks.register('clean', Delete) {
+    delete rootProject.buildDir
+}
+
+detekt {
+    input = files("$projectDir/app/src")
+    config = files("$projectDir/config/detekt.yml")
+
+    reports {
+        html {
+            enabled = true
+            destination = file("$projectDir/build/reports/detekt.html")
+        }
+        xml {
+            enabled = false
+        }
+        txt {
+            enabled = false
+        }
+    }
+}
+
+tasks.withType(io.gitlab.arturbosch.detekt.Detekt).configureEach() {
+    autoCorrect = true
+
+    exclude "**/test/**"
+    exclude "**/androidTest/**"
+    exclude "**/build/**"
+    exclude "**/resources/**"
+    exclude "**/tmp/**"
+}
+
+tasks.withType(io.gitlab.arturbosch.detekt.DetektCreateBaselineTask).configureEach() {
+    exclude "**/test/**"
+    exclude "**/androidTest/**"
+    exclude "**/build/**"
+    exclude "**/resources/**"
+    exclude "**/tmp/**"
+}
+
+configurations {
+    ktlint
+}
+
+dependencies {
+    ktlint("com.pinterest:ktlint:0.41.0") {
+        attributes {
+            attribute(Bundling.BUNDLING_ATTRIBUTE, getObjects().named(Bundling, Bundling.EXTERNAL))
+        }
+    }
+
+    detekt project(":mozilla-detekt-rules")
+    detekt "io.gitlab.arturbosch.detekt:detekt-cli:${Versions.detekt}"
+}
+
+tasks.register('ktlint', JavaExec) {
+    group = "verification"
+    description = "Check Kotlin code style."
+    classpath = configurations.ktlint
+    main = "com.pinterest.ktlint.Main"
+    args "app/src/**/*.kt", "!**/build/**/*.kt"
+}
+
+task ktlintFormat(type: JavaExec, group: "formatting") {
+    description = "Fix Kotlin code style deviations."
+    classpath = configurations.ktlint
+    main = "com.pinterest.ktlint.Main"
+    args "-F", "app/src/**/*.kt", "!**/build/**/*.kt"
+}
+
+tasks.withType(io.gitlab.arturbosch.detekt.Detekt.class).configureEach {
+    exclude("**/resources/**")
+    exclude("**/tmp/**")
+}
+
+tasks.register("listRepositories") {
+    doLast {
+        println "Repositories:"
+        project.repositories.each { println "Name: " + it.name + "; url: " + it.url }
+    }
+}
+
+tasks.register("githubTestDetails", GithubDetailsTask) {
+    text = "### [Unit Test Results]({reportsUrl}/test/testDebugUnitTest/index.html)"
+}
+
+tasks.register("githubLintDetektDetails", GithubDetailsTask) {
+    text = "### [Detekt Results]({reportsUrl}/detekt.html)"
+}
+
+tasks.register("githubLintAndroidDetails", GithubDetailsTask) {
+    text = "### [Android Lint Results]({reportsUrl}/lint-results-debug.html)"
+}
